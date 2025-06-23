@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Управление местами — Бизнес-класс</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="index.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+    <h1>Управление креслами и заказами бизнес класса</h1>
+    <div class="buttons-settings">
+        <button class="settings-button btn" id="settings-button" onclick="openSettingsModal()">⚙️</button>
+        <button class="theme-toggle btn" id="theme-toggle" onclick="toggleTheme()">🌙</button>
+    </div>
+    <div class="main-container">
+        <div class="left-column" id="left-column"></div>
+        <div class="right-column" id="right-column"></div>
+    </div>
+
+    <div class="buttons">
+        <button class="add-button btn" id="add-button" onclick="addSeat()">Добавить кресло/заказ</button>
+        <button class="next-button btn" id="next-button" onclick="nextStep()">Принять/изменить заказ</button>
+        <button class="reset-button btn" id="reset-button" onclick="resetAll()">Сбросить</button>
+        <button class="load-menu-button btn" onclick="openFlightModal()">Подгрузить меню</button>
+        <button class="view-all-orders-button btn" onclick="viewAllOrders()">Показать все заказы</button>
+    </div>
+
+    <!-- Оверлей и модальные окна -->
+    <div class="modal-overlay" id="seat-input-modal-overlay" style="display: none;">
+        <div class="seat-input-modal modal" id="seat-input-modal" style="display: none;">
+            <h3>Добавить кресла</h3>
+            <div class="seats-grid" id="seats-grid"></div>
+            <div class="modal-footer">
+                <button class="modal-button btn close-button" onclick="closeSeatInputModal()">Отмена</button>
+                <button class="modal-button btn" onclick="confirmAddSelectedSeats()">Добавить выбранные</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="orders-modal-overlay" style="display: none;">
+        <div class="orders-modal modal" id="orders-modal" style="min-width: 65%; display: none;">
+            <h3>Все заказы</h3>
+            <ul id="all-orders-list"></ul>
+            <button class="modal-button btn" onclick="shareOrders('telegram')">Поделиться в Telegram</button>
+            <button class="modal-button btn" onclick="shareOrders('whatsapp')">Поделиться в WhatsApp</button>
+            <button class="modal-button btn close-button" onclick="closeOrdersModal()">Закрыть</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="settings-modal-overlay" style="display: none;">
+        <div class="settings-modal modal" id="settings-modal" style="display: none;">
+            <h3>Настройки нумерации мест</h3>
+            
+            <div class="setting-group">
+                <label for="seat-letters">Буквы мест:</label>
+                <input type="text" id="seat-letters" 
+                       placeholder="Например: A,C,D,F"
+                       pattern="[A-Z,]+"
+                       title="Только заглавные английские буквы через запятую">
+                <div class="setting-description">
+                    Укажите заглавные английские буквы через запятую в нужном порядке.
+                    Например: A,C,D,F (без пробелов)
+                </div>
+            </div>
+            
+            <div class="setting-group">
+                <label for="start-row">Начальный ряд:</label>
+                <input type="number" id="start-row" 
+                       placeholder="Например: 1"
+                       min="1" max="100">
+                <div class="setting-description">
+                    Номер первого ряда в салоне (только цифры)
+                </div>
+            </div>
+            
+            <div class="setting-group">
+                <label for="end-seat">Конечное место:</label>
+                <input type="text" id="end-seat" 
+                       placeholder="Например: 4F"
+                       pattern="[0-9]+[A-Z]?"
+                       title="Формат: номер ряда и буква (например, 4F)">
+                <div class="setting-description">
+                    Последнее место в салоне (например: 4F - 4 ряд, место F)
+                </div>
+            </div>
+            
+            <div class="setting-group checkbox-group">
+                <label>
+                    <input type="checkbox" id="use-letters" checked> Использовать буквы
+                </label>
+                <div class="setting-description">
+                    Если выключено - будут использоваться только номера рядов
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button class="modal-button btn" onclick="applySettings()">Сохранить</button>
+                <button class="modal-button btn close-button" onclick="closeSettingsModal()">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="flight-modal-overlay" style="display: none;">
+        <div class="flight-modal modal" id="flight-modal" style="display: none;">
+            <h3>Подгрузка меню</h3>
+            <select id="flight-direction">
+                <option value="">Выберите направление</option>
+            </select>
+            <button class="modal-button btn" onclick="loadMenuFromGitHub()">Подгрузить</button>
+            <button class="modal-button btn close-button" onclick="closeFlightModal()">Закрыть</button>
+        </div>
+    </div>
+
+    <script>
+        const leftColumn = document.getElementById('left-column');
+        const rightColumn = document.getElementById('right-column');
+        const ordersModal = document.getElementById('orders-modal');
+        const allOrdersList = document.getElementById('all-orders-list');
+        const settingsModal = document.getElementById('settings-modal');
+        const flightModal = document.getElementById('flight-modal');
+        const seatLettersInput = document.getElementById('seat-letters');
+        const startRowInput = document.getElementById('start-row');
+        const endSeatInput = document.getElementById('end-seat');
+        const useLettersCheckbox = document.getElementById('use-letters');
+        const flightDirectionSelect = document.getElementById('flight-direction');
+        const themeToggle = document.getElementById('theme-toggle');
+        const seatInputModal = document.getElementById('seat-input-modal');
+        const seatsGrid = document.getElementById('seats-grid');
+    
+        let selectedSeats = JSON.parse(localStorage.getItem('selectedSeats')) || [];
+        let seatLetters = ['F', 'D', 'C', 'A'];
+        let startRow = 1;
+        let endSeat = '3';
+        let useLetters = true;
+    
+        if (localStorage.getItem('theme') === 'light') {
+            document.body.classList.add('light-theme');
+            themeToggle.textContent = '☀️';
+        } else {
+            themeToggle.textContent = '🌙';
+        }
+    
+        function toggleTheme() {
+            document.body.classList.toggle('light-theme');
+            const isLight = document.body.classList.contains('light-theme');
+            themeToggle.textContent = isLight ? '☀️' : '🌙';
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+        }
+    
+        function openModal(modalId) {
+            const overlay = document.getElementById(`${modalId}-overlay`);
+            const modal = document.getElementById(modalId);
+            overlay.style.display = 'block';
+            modal.style.display = 'block';
+            
+            overlay.onclick = function(e) {
+                if (e.target === overlay) {
+                    closeModal(modalId);
+                }
+            };
+        }
+        
+        function closeModal(modalId) {
+            const overlay = document.getElementById(`${modalId}-overlay`);
+            const modal = document.getElementById(modalId);
+            overlay.style.display = 'none';
+            modal.style.display = 'none';
+        }
+    
+        function loadSeats() {
+            let savedSeats = JSON.parse(localStorage.getItem('savedSeats')) || [];
+            savedSeats = savedSeats.map(seat => {
+                const match = seat.match(/^(\d+)([a-zA-Z]?)$/);
+                if (!match) return seat;
+                return match[1] + (match[2] ? match[2].toUpperCase() : '');
+            });
+            
+            localStorage.setItem('savedSeats', JSON.stringify(savedSeats));
+            selectedSeats = JSON.parse(localStorage.getItem('selectedSeats')) || [];
+            leftColumn.innerHTML = '';
+            rightColumn.innerHTML = '';
+
+            savedSeats.sort((a, b) => {
+                const getRow = s => parseInt(s.match(/\d+/)[0]);
+                const getLetter = s => s.match(/[A-Z]/)?.[0] || '';
+                
+                const rowA = getRow(a);
+                const rowB = getRow(b);
+                
+                if (rowA !== rowB) return rowA - rowB;
+                
+                const letterA = getLetter(a);
+                const letterB = getLetter(b);
+                const indexA = seatLetters.indexOf(letterA);
+                const indexB = seatLetters.indexOf(letterB);
+                
+                return indexA - indexB;
+            });
+
+            savedSeats.forEach(seat => {
+                const savedMenu = JSON.parse(localStorage.getItem(`menu_${seat}`)) || {};
+                const hasOrder = Object.keys(savedMenu).some(key => key !== 'passengerName' && savedMenu[key]?.checked);
+                const passengerName = savedMenu.passengerName ? ` (${savedMenu.passengerName})` : '';
+                
+                const seatElement = document.createElement('div');
+                seatElement.setAttribute('data-seat', seat);
+                seatElement.textContent = seat + (hasOrder ? ' (Сохранено)' : '') + passengerName;
+
+                if (selectedSeats.includes(seat)) {
+                    seatElement.className = 'seat selected-seat';
+                    rightColumn.appendChild(seatElement);
+                } else {
+                    seatElement.className = 'seat' + (hasOrder ? ' saved-seat' : '');
+                    
+                    const allSeats = Array.from(leftColumn.querySelectorAll('.seat'));
+                    let insertBefore = null;
+                    
+                    for (let i = 0; i < allSeats.length; i++) {
+                        const currentSeat = allSeats[i].getAttribute('data-seat');
+                        if (compareSeats(seat, currentSeat) < 0) {
+                            insertBefore = allSeats[i];
+                            break;
+                        }
+                    }
+                    
+                    if (insertBefore) {
+                        leftColumn.insertBefore(seatElement, insertBefore);
+                    } else {
+                        leftColumn.appendChild(seatElement);
+                    }
+                }
+            });
+        }
+    
+        function viewAllOrders() {
+            const savedSeats = JSON.parse(localStorage.getItem('savedSeats')) || [];
+            allOrdersList.innerHTML = '';
+
+            // Сортировка savedSeats по номеру ряда и букве места
+            savedSeats.sort((a, b) => {
+                const getRow = s => parseInt(s.match(/\d+/)[0]);
+                const getLetter = s => s.match(/[A-Z]/)?.[0] || '';
+                
+                const rowA = getRow(a);
+                const rowB = getRow(b);
+                
+                if (rowA !== rowB) return rowA - rowB;
+                
+                const letterA = getLetter(a);
+                const letterB = getLetter(b);
+                const indexA = seatLetters.indexOf(letterA);
+                const indexB = seatLetters.indexOf(letterB);
+                
+                return indexA - indexB;
+            });
+
+            savedSeats.forEach(seat => {
+                const savedMenu = JSON.parse(localStorage.getItem(`menu_${seat}`)) || {};
+                const passengerName = savedMenu.passengerName ? ` (${savedMenu.passengerName})` : '';
+                let hasItems = false;
+                let sections = {};
+
+                Object.entries(savedMenu).forEach(([item, data]) => {
+                    if (item !== 'passengerName' && (data.checked || (data.subitems && data.subitems.length > 0))) {
+                        hasItems = true;
+                        const section = data.section || 'Без раздела';
+                        
+                        if (!sections[section]) sections[section] = [];
+                        
+                        if (data.checked) {
+                            sections[section].push(item);
+                        }
+                        
+                        if (data.subitems && data.subitems.length > 0) {
+                            data.subitems.forEach(subitem => {
+                                sections[section].push(`  - ${subitem}`);
+                            });
+                        }
+                    }
+                });
+
+                if (hasItems) {
+                    const listItem = document.createElement('li');
+                    let orderDetails = `<strong>Место ${seat}${passengerName}:</strong><br>`;
+                    
+                    Object.keys(sections).forEach(section => {
+                        orderDetails += `<strong>${section}:</strong><br>${sections[section].join('<br>')}<br>`;
+                    });
+                    
+                    listItem.innerHTML = orderDetails;
+                    allOrdersList.appendChild(listItem);
+                }
+            });
+
+            openModal('orders-modal');
+        }
+    
+        function closeOrdersModal() {
+            closeModal('orders-modal');
+        }
+    
+        function shareOrders(platform) {
+            const savedSeats = JSON.parse(localStorage.getItem('savedSeats')) || [];
+            let ordersText = 'Список заказов:\n\n';
+    
+            savedSeats.forEach(seat => {
+                const savedMenu = JSON.parse(localStorage.getItem(`menu_${seat}`)) || {};
+                let hasItems = false;
+                let sections = {};
+                const passengerName = savedMenu.passengerName ? ` (${savedMenu.passengerName})` : '';
+    
+                Object.keys(savedMenu).forEach(item => {
+                    if (item !== 'passengerName' && savedMenu[item]?.checked) {
+                        hasItems = true;
+                        const section = savedMenu[item].section || 'Без раздела';
+                        if (!sections[section]) sections[section] = [];
+                        sections[section].push(item);
+                        if (savedMenu[item].subitems && savedMenu[item].subitems.length > 0) {
+                            savedMenu[item].subitems.forEach(subitem => {
+                                sections[section].push(`  - ${subitem}`);
+                            });
+                        }
+                    }
+                });
+    
+                if (hasItems) {
+                    ordersText += `Место ${seat}${passengerName}:\n`;
+                    Object.keys(sections).forEach(section => {
+                        ordersText += `${section}:\n${sections[section].join('\n')}\n`;
+                    });
+                    ordersText += '\n';
+                }
+            });
+    
+            const encodedText = encodeURIComponent(ordersText);
+            if (platform === 'telegram') {
+                window.open(`https://t.me/share/url?url=${encodeURIComponent('Список заказов')}&text=${encodedText}`, '_blank');
+            } else if (platform === 'whatsapp') {
+                window.open(`https://api.whatsapp.com/send?text=${encodedText}`, '_blank');
+            }
+        }
+    
+        function handleSeatClick(event) {
+            const seat = event.target;
+            const seatNumber = seat.getAttribute('data-seat');
+
+            if (seat.parentElement === leftColumn) {
+                const selectedSeat = document.createElement('div');
+                selectedSeat.className = 'seat selected-seat';
+                selectedSeat.setAttribute('data-seat', seatNumber);
+                
+                const savedMenu = JSON.parse(localStorage.getItem(`menu_${seatNumber}`)) || {};
+                const passengerName = savedMenu.passengerName ? ` (${savedMenu.passengerName})` : '';
+                selectedSeat.textContent = seatNumber + passengerName;
+                
+                rightColumn.appendChild(selectedSeat);
+                seat.remove();
+                selectedSeats.push(seatNumber);
+            } else if (seat.parentElement === rightColumn) {
+                const savedSeats = JSON.parse(localStorage.getItem('savedSeats')) || [];
+                const savedMenu = JSON.parse(localStorage.getItem(`menu_${seatNumber}`)) || {};
+                const hasOrder = Object.keys(savedMenu).some(key => key !== 'passengerName' && savedMenu[key]?.checked);
+                
+                const originalSeat = document.createElement('div');
+                originalSeat.className = 'seat' + (hasOrder ? ' saved-seat' : '');
+                originalSeat.setAttribute('data-seat', seatNumber);
+                
+                const passengerName = savedMenu.passengerName ? ` (${savedMenu.passengerName})` : '';
+                originalSeat.textContent = seatNumber + (hasOrder ? ' (Сохранено)' : '') + passengerName;
+                
+                const allSeats = Array.from(leftColumn.querySelectorAll('.seat'));
+                let insertBefore = null;
+                
+                for (let i = 0; i < allSeats.length; i++) {
+                    if (compareSeats(seatNumber, allSeats[i].getAttribute('data-seat')) < 0) {
+                        insertBefore = allSeats[i];
+                        break;
+                    }
+                }
+                
+                if (insertBefore) {
+                    leftColumn.insertBefore(originalSeat, insertBefore);
+                } else {
+                    leftColumn.appendChild(originalSeat);
+                }
+                
+                seat.remove();
+                selectedSeats = selectedSeats.filter(s => s !== seatNumber);
+            }
+
+            localStorage.setItem('selectedSeats', JSON.stringify(selectedSeats));
+        }
+    
+        function nextStep() {
+            if (selectedSeats.length === 0) {
+                alert('Пожалуйста, выберите хотя бы одно место!');
+                return;
+            }
+            localStorage.setItem('currentSeats', JSON.stringify(selectedSeats));
+            window.location.href = 'menu.html';
+        }
+    
+        function resetAll() {
+            if (confirm('Вы уверены, что хотите сбросить все заказы? Это действие нельзя отменить.')) {
+                const savedSeats = JSON.parse(localStorage.getItem('savedSeats')) || [];
+                savedSeats.forEach(seat => {
+                    localStorage.removeItem(`menu_${seat}`);
+                });
+                localStorage.removeItem('savedSeats');
+                localStorage.removeItem('selectedSeats');
+                selectedSeats = [];
+                window.location.reload();
+            }
+        }
+    
+        function compareSeats(seat1, seat2) {
+            const row1 = parseInt(seat1.match(/\d+/)[0]);
+            const row2 = parseInt(seat2.match(/\d+/)[0]);
+            const letter1 = seat1.match(/[A-Za-z]/) ? seat1.match(/[A-Za-z]/)[0] : '';
+            const letter2 = seat2.match(/[A-Za-z]/) ? seat2.match(/[A-Za-z]/)[0] : '';
+    
+            if (row1 !== row2) return row1 - row2;
+            return seatLetters.indexOf(letter1) - seatLetters.indexOf(letter2);
+        }
+    
+        function addSeat() {
+            openModal('seat-input-modal');
+            updateSeatsGrid();
+        }
+    
+        function updateSeatsGrid() {
+            seatsGrid.innerHTML = '';
+            
+            const savedSeats = JSON.parse(localStorage.getItem('savedSeats')) || [];
+            const endRow = parseInt(endSeat.match(/\d+/)[0]);
+            
+            // Определяем буквы мест из настроек
+            const letters = useLetters ? seatLetters : [''];
+            
+            // Устанавливаем количество колонок равное количеству букв
+            seatsGrid.style.gridTemplateColumns = `repeat(${letters.length}, 1fr)`;
+            
+            // Создаем ряды в обратном порядке (снизу вверх)
+            for (let row = endRow; row >= startRow; row--) {
+                letters.forEach(letter => {
+                    const seatNumber = useLetters ? `${row}${letter}` : `${row}`;
+                    if (!savedSeats.includes(seatNumber)) {
+                        const seatElement = document.createElement('div');
+                        seatElement.className = 'seat-option';
+                        seatElement.textContent = seatNumber;
+                        seatElement.dataset.seat = seatNumber;
+                        if (useLetters) {
+                            seatElement.dataset.letter = letter;
+                        }
+                        seatElement.onclick = function() {
+                            this.classList.toggle('selected');
+                        };
+                        seatsGrid.appendChild(seatElement);
+                    }
+                });
+            }
+        }
+    
+        function confirmAddSelectedSeats() {
+            const selectedSeatElements = document.querySelectorAll('.seat-option.selected');
+            const savedSeats = JSON.parse(localStorage.getItem('savedSeats')) || [];
+            
+            if (selectedSeatElements.length === 0) {
+                alert('Пожалуйста, выберите хотя бы одно место!');
+                return;
+            }
+            
+            selectedSeatElements.forEach(seatElement => {
+                let seatNumber = seatElement.dataset.seat;
+                seatNumber = seatNumber.replace(/(\d+)([a-z])?/i, (_, num, letter) => 
+                    num + (letter ? letter.toUpperCase() : '')
+                );
+                
+                if (!savedSeats.includes(seatNumber)) {
+                    savedSeats.push(seatNumber);
+                    selectedSeats.push(seatNumber);
+                    
+                    const seatElement = document.createElement('div');
+                    seatElement.className = 'seat selected-seat';
+                    seatElement.setAttribute('data-seat', seatNumber);
+                    seatElement.textContent = seatNumber;
+                    rightColumn.appendChild(seatElement);
+                }
+            });
+            
+            localStorage.setItem('savedSeats', JSON.stringify(savedSeats));
+            localStorage.setItem('selectedSeats', JSON.stringify(selectedSeats));
+            closeSeatInputModal();
+        }
+    
+        function closeSeatInputModal() {
+            closeModal('seat-input-modal');
+            document.querySelectorAll('.seat-option.selected').forEach(el => {
+                el.classList.remove('selected');
+            });
+        }
+    
+        function openSettingsModal() {
+            seatLettersInput.value = seatLetters.join(',');
+            startRowInput.value = startRow;
+            endSeatInput.value = endSeat;
+            useLettersCheckbox.checked = useLetters;
+            seatLettersInput.disabled = !useLetters;
+            openModal('settings-modal');
+
+            seatLettersInput.addEventListener('input', function() {
+                this.value = this.value.toUpperCase().replace(/[^A-Z,]/g, '');
+            });
+            
+            endSeatInput.addEventListener('input', function() {
+                this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            });
+        }
+    
+        function closeSettingsModal() {
+            closeModal('settings-modal');
+        }
+    
+        function applySettings() {
+            const letters = seatLettersInput.value.split(',')
+                .map(l => l.trim().toUpperCase())
+                .filter(l => l.length === 1 && /^[A-Z]$/.test(l));
+            
+            const row = parseInt(startRowInput.value);
+            const end = endSeatInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const newUseLetters = useLettersCheckbox.checked;
+
+            if ((newUseLetters && letters.length > 0 && !isNaN(row) && end) || 
+                (!newUseLetters && !isNaN(row) && end)) {  // Добавлена недостающая скобка
+                
+                const settingsChanged = 
+                    JSON.stringify(letters) !== JSON.stringify(seatLetters) ||
+                    row !== startRow ||
+                    end !== endSeat ||
+                    newUseLetters !== useLetters;
+
+                if (settingsChanged) {
+                    if (confirm('Изменение настроек приведет к сбросу всех добавленных мест. Продолжить?')) {
+                        const savedSeats = JSON.parse(localStorage.getItem('savedSeats')) || [];
+                        savedSeats.forEach(seat => {
+                            localStorage.removeItem(`menu_${seat}`);
+                        });
+                        localStorage.removeItem('savedSeats');
+                        localStorage.removeItem('selectedSeats');
+
+                        seatLetters = newUseLetters ? letters : [];
+                        startRow = row;
+                        endSeat = end;
+                        useLetters = newUseLetters;
+                        selectedSeats = [];
+
+                        leftColumn.innerHTML = '';
+                        rightColumn.innerHTML = '';
+                    }
+                }
+
+                closeSettingsModal();
+            } else {
+                alert('Пожалуйста, заполните все поля корректно! Буквы должны быть от A до Z.');
+            }
+        }    
+        
+        async function openFlightModal() {
+            openModal('flight-modal');
+            flightDirectionSelect.innerHTML = '<option value="">Выберите направление</option>';
+    
+            const url = 'https://raw.githubusercontent.com/saySPB/myFlightmenu/main/Лист%20Microsoft%20Excel.xlsx';
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Ошибка HTTP: ${response.status}`);
+                const arrayBuffer = await response.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(sheet);
+    
+                const directions = [...new Set(jsonData.map(row => row['Flight Direction']))];
+                directions.forEach(direction => {
+                    flightDirectionSelect.innerHTML += `<option value="${direction}">${direction}</option>`;
+                });
+            } catch (error) {
+                console.error('Ошибка загрузки списка рейсов:', error);
+                alert('Не удалось загрузить список рейсов с GitHub. Проверьте консоль для деталей.');
+            }
+        }
+    
+        function closeFlightModal() {
+            closeModal('flight-modal');
+        }
+    
+        async function loadMenuFromGitHub() {
+            const direction = flightDirectionSelect.value;
+            if (!direction) {
+                alert('Пожалуйста, выберите направление!');
+                return;
+            }
+    
+            const url = 'https://raw.githubusercontent.com/saySPB/myFlightmenu/main/Лист%20Microsoft%20Excel.xlsx';
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Ошибка HTTP: ${response.status}`);
+                const arrayBuffer = await response.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(sheet);
+    
+                const filteredData = jsonData.filter(row => row['Flight Direction'] === direction);
+                const menuData = {};
+                const cycles = [...new Set(filteredData.map(row => row['Cycle']))];
+    
+                cycles.forEach(cycle => {
+                    menuData[cycle] = { sections: {}, subitems: {} };
+                    const cycleData = filteredData.filter(row => row['Cycle'] === cycle);
+                    cycleData.forEach(row => {
+                        const section = row['Section'];
+                        const item = row['Item'];
+                        let subitems = [];
+                        if (row['Subitem']) subitems.push(row['Subitem']);
+                        if (row['Subitem.1']) subitems.push(row['Subitem.1']);
+    
+                        if (!menuData[cycle].sections[section]) {
+                            menuData[cycle].sections[section] = [];
+                        }
+                        if (!menuData[cycle].sections[section].includes(item)) {
+                            menuData[cycle].sections[section].push(item);
+                        }
+                        if (subitems.length > 0) {
+                            menuData[cycle].subitems[item] = subitems;
+                        }
+                    });
+                });
+    
+                localStorage.setItem('menuData', JSON.stringify(menuData));
+                localStorage.setItem('flightDirection', direction);
+                localStorage.setItem('cycles', JSON.stringify(cycles));
+                alert('Меню успешно подгружено!');
+                closeFlightModal();
+            } catch (error) {
+                console.error('Ошибка загрузки меню:', error);
+                alert('Не удалось подгрузить меню с GitHub. Проверьте консоль для деталей.');
+            }
+        }
+    
+        leftColumn.addEventListener('click', handleSeatClick);
+        rightColumn.addEventListener('click', handleSeatClick);
+        useLettersCheckbox.addEventListener('change', () => {
+            seatLettersInput.disabled = !useLettersCheckbox.checked;
+        });
+    
+        function setupModalClose() {
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+                        if (overlay.style.display === 'block') {
+                            const modalId = overlay.id.replace('-overlay', '');
+                            closeModal(modalId);
+                        }
+                    });
+                }
+            });
+        }
+
+        window.onload = function() {
+            loadSeats();
+            setupModalClose();
+        };
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'93d7fa27dbcf12e7',t:'MTc0Njg2NDgwNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
